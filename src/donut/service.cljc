@@ -124,12 +124,12 @@
      ~@(map api-def-form api)
      (def ~service-name (map->Service {:api ~(service-api api)}))))
 
-(defmacro extend-service
+(defmacro implement-service
   [service-name {:keys [handler translation]}]
-  (let [extension {:handler handler
-                   :api->local translation
-                   :local->api (set/map-invert translation)}]
-    `(alter-var-root (var ~service-name) merge ~extension)))
+  (let [implementation {:handler handler
+                        :api->local translation
+                        :local->api (set/map-invert translation)}]
+    `(alter-var-root (var ~service-name) merge ~implementation)))
 
 (comment
   (defn user-by-credentials
