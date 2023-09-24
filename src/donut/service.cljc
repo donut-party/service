@@ -24,11 +24,11 @@
     request))
 
 (defn- translate-request
-  [{{:keys [local->api]} :service
+  [{{:keys [api->local]} :service
     :keys [body]
     :as request}]
-  (assoc request :body (if (and (map? body) local->api)
-                         (set/rename-keys body local->api)
+  (assoc request :body (if (and (map? body) api->local)
+                         (set/rename-keys body api->local)
                          body)))
 
 (defn- translate-response

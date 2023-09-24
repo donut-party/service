@@ -30,10 +30,13 @@
                :where  [:= [::term :user/password_reset_token] :?]}}})
 
   (user-signup!
-   {:body-schema map?
+   {:body-schema
+    [:map
+     [:user/email string?]
+     [:user/password string?]]
 
     :transform-request
-    (fn [request]
+    (fn user-signup!-transform-request [request]
       (let [password (get-in request [:body :user/password])]
         (update request :body #(-> %
                                    (dissoc :user/password)
@@ -110,7 +113,9 @@
   {:translation
    {:user/id :my-user/id
     :user/email :my-user/email
-    :user/password_hash :my-user/password_hash}
+    :user/password_hash :my-user/password_hash
+    :user/password_reset_token :my-user/password_reset_token
+    :user/password_reset_token_created_at :my-user/password_reset_token_created_at}
    :handler identity-store-handler})
 
 (deftest test-user-by-email
@@ -118,3 +123,16 @@
   (is (= {:user/id 1
           :user/email "test@test.com"}
          (user-by-email IdentityStore "test@test.com"))))
+
+(deftest test-translates-body
+  (user-signup! IdentityStore {:user/id 1
+                               :user/email "test@test.com"
+                               :user/password "password"})
+  (is (= {:my-user/id 1
+          :my-user/email "test@test.com"
+          :my-user/password_hash "PASSWORD"}
+         @data-store)))
+
+;; TODO
+;; - body-schema validation
+;; - an anomaly with transform
