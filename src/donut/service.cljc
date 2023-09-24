@@ -1,7 +1,8 @@
 (ns donut.service
   (:require
    [malli.core :as m]
-   [malli.error :as me]))
+   [malli.error :as me]
+   [clojure.string :as str]))
 
 (defrecord Service [adapter translations api])
 
@@ -13,17 +14,35 @@
   [k]
   [::param k])
 
+(defn- validate-body
+  [{:keys [fn-def] :as request}]
+  request)
+
+(defn- wrap [request] request)
+(defn- translate [request] request)
+(defn- build-op [request] request)
+(defn- execute-op [request] request)
+(defn- validate-response [request] request)
+
 (defn handle-request
   [{:keys [service body fn-name] :as request}]
-  (-> (validate service request)
-      (wrap)
-      (translate)
-      (build-op)
-      (execute-op)))
+  (reduce (fn [x f]
+            (let [response (f x)]
+              (if (:cognitect.anomalies/category response)
+                (reduced response)
+                response)))
+          (assoc request :fn-def (get-in service [:api fn-name]))
+          [validate-body
+           wrap
+           translate
+           build-op
+           execute-op
+           validate-response]))
 
 (defn service-api
   [api]
-  (reduce (fn [m op])
+  (reduce (fn [m [fn-name docstring-or-data data]]
+            (assoc m (keyword fn-name) (or data docstring-or-data)))
           {}
           api))
 
@@ -32,14 +51,17 @@
   (let [data      (if data data)
         docstring (if data docstring-or-data "service op")
         service   'service
-        request   'request
+        body      'body
         fn-name-k (keyword fn-name)]
     `(defn ~fn-name
        ~docstring
        [~service ~body]
        (handle-request {:service ~service
-                        :body ~body
+                        :body    ~body
                         :fn-name ~fn-name-k}))))
+
+(defn token-expired?
+  [x y] false)
 
 (defmacro defservice
   [service-name & api]
@@ -75,7 +97,7 @@
         (handler
          (-> user
              (dissoc :user/password)
-             (assoc :user/password_hash (buddy-hashers/encrypt password))))))
+             (assoc :user/password_hash (str/upper-case password))))))
 
     :op-template
     {:op        :insert
@@ -91,8 +113,8 @@
       (fn [u]
         (handler
          (assoc u
-                :user/password_reset_token (nano-id/nano-id 10)
-                :user/password_reset_token_created_at (current-time-seconds)))))
+                :user/password_reset_token (java.util.UUID/randomUUID)
+                :user/password_reset_token_created_at 0))))
 
     :op-template
     {:op        :update
@@ -108,10 +130,10 @@
       (fn [u]
         (let [user (user-by-password-reset-token u)]
           (if (or (not user)
-                  (token-expired? (:user/password_reset_token user) token-max-age))
+                  (token-expired? (:user/password_reset_token user) 0))
             {:cognitect.anomalies/category :not-found}
             (handler
-             {:user/password_hash                   (budy-hashers/encrypt (:new-password x))
+             {:user/password_hash                   (str/upper-case (:new-password u))
               :user/password_reset_token            nil
               :user/password_reset_token_created_at nil
               :user/id                              (:user/id user)})))))
@@ -122,6 +144,7 @@
      :where     {[::term :user/id] [::param :user/id]}
      :record    :?}}))
 
+#_
 (defn user-by-credentials
   [store {:keys [:user/password] :as creds}]
   (let [user (user-by-email db email)]
@@ -130,6 +153,7 @@
          (:valid (buddy-hashers/verify password (:user/password_hash user)))
          user)))
 
+#_
 (extend-service
  IdentityStore
  {:translations []
