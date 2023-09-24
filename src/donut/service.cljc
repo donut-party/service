@@ -18,10 +18,20 @@
   [::param k])
 
 (defn- validate-body
-  [{:keys [fn-def] :as request}]
-  request)
+  [{{:keys [body-schema]} :fn-def
+    :keys [body]
+    :as request}]
+  (if-let [explanation (and body-schema (m/explain body-schema body))]
+    {:cognitect.anomalies/category :incorrect
+     :spec-explain explanation
+     :spec-explain-human (me/humanize explanation)}
+    request))
 
-(defn- wrap [request] request)
+(defn- transform-request
+  [{:keys [fn-def] :as request}]
+  (if-let [transform (:transform-request fn-def)]
+    (transform request)
+    request))
 
 (defn- translate-request
   [{{:keys [local->api]} :service
@@ -39,7 +49,7 @@
                    :as _request}]
   (handler op))
 
-(defn- validate-response [request] request)
+(defn- validate-response [response] response)
 
 (defn handle-request
   [{:keys [service fn-name] :as request}]
@@ -50,7 +60,7 @@
                 response)))
           (assoc request :fn-def (get-in service [:api fn-name]))
           [validate-body
-           wrap
+           transform-request
            translate-request
            build-op
            handle-op
@@ -121,72 +131,67 @@
    {:body-schema []
 
     :op-template
-    {:op-type    :get-one
-     :query {:select [:*]
-             :from   [::term :user]
-             :where  [:= [::term :user/email] :?]}}})
+    {:op-type :get-one
+     :query   {:select [:*]
+               :from   [::term :user]
+               :where  [:= [::term :user/email] :?]}}})
 
   (user-by-password-reset-token
    {:body-schema []
 
     :op-template
-    {:op-type    :get-one
-     :query {:select [:*]
-             :from   [::term :user]
-             :where  [:= [::term :user/password_reset_token] :?]}}})
+    {:op-type :get-one
+     :query   {:select [:*]
+               :from   [::term :user]
+               :where  [:= [::term :user/password_reset_token] :?]}}})
 
   (user-signup!
    {:body-schema []
 
-    :wrap
-    (fn [handler]
-      (fn [{:keys [:user/password] :as user}]
-        (handler
-         (-> user
-             (dissoc :user/password)
-             (assoc :user/password_hash (str/upper-case password))))))
+    :transform-request
+    (fn [request]
+      (let [password (get-in request [:body :user/password])]
+        (update request :body #(-> %
+                                   (dissoc :user/password)
+                                   (assoc :user/password_hash (str/upper-case password))))))
 
     :op-template
-    {:op-type        :insert
+    {:op-type   :insert
      :container [::term :user]
      :records   [:?]}})
 
   (create-reset-password-token!
-   {:body-schema  []
+   {:body-schema     map?
     :response-schema []
 
-    :wrap
-    (fn [handler]
-      (fn [u]
-        (handler
-         (assoc u
-                :user/password_reset_token (UUID/randomUUID)
-                :user/password_reset_token_created_at 0))))
+    :transform-request
+    (fn [request]
+      (update request :body #(assoc %
+                                    :user/password_reset_token (UUID/randomUUID)
+                                    :user/password_reset_token_created_at 0)))
 
     :op-template
-    {:op-type        :update
+    {:op-type   :update
      :container [::term :user]
      :where     {[::term :user/id] [::param :user/id]}
      :record    :?}})
 
   (consume-password-reset-token!
-   {:body-schema []
+   {:body-schema map?
 
-    :wrap
-    (fn [handler]
-      (fn [u]
-        (let [user (user-by-password-reset-token u)]
-          (if (or (not user)
-                  (token-expired? (:user/password_reset_token user) 0))
-            {:cognitect.anomalies/category :not-found}
-            (handler
-             {:user/password_hash                   (str/upper-case (:new-password u))
-              :user/password_reset_token            nil
-              :user/password_reset_token_created_at nil
-              :user/id                              (:user/id user)})))))
+    :transform-request
+    (fn [{:keys [body] :as request}]
+      (let [user (user-by-password-reset-token (:service request) body)]
+        (if (or (not user)
+                (token-expired? (:user/password_reset_token user) 0))
+          {:cognitect.anomalies/category :not-found}
+          (assoc request :body {:user/password_hash                   (str/upper-case (:new-password body))
+                                :user/password_reset_token            nil
+                                :user/password_reset_token_created_at nil
+                                :user/id                              (:user/id user)}))))
 
     :op-template
-    {:op-type        :update
+    {:op-type   :update
      :container [::term :user]
      :where     {[::term :user/id] [::param :user/id]}
      :record    :?}}))
