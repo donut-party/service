@@ -1,5 +1,5 @@
 (ns build
-  "donut/datastore's build script. Builds on https://github.com/seancorfield/honeysql/blob/develop/build.clj
+  "donut/service's build script. Builds on https://github.com/seancorfield/honeysql/blob/develop/build.clj
 
   Run tests:
   clojure -X:test
@@ -11,7 +11,7 @@
             [org.corfield.build :as bb])
   (:refer-clojure :exclude [test]))
 
-(def lib 'party.donut/datastore)
+(def lib 'party.donut/service)
 (def version (format "0.0.%s" (b/git-count-revs nil)))
 
 (defn deploy "Deploy the JAR to Clojars"
