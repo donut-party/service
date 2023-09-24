@@ -2,9 +2,12 @@
   (:require
    [malli.core :as m]
    [malli.error :as me]
-   [clojure.string :as str]))
+   [clojure.string :as str]
+   [clojure.set :as set]
+   [clojure.walk :as walk])
+  (:import [java.util UUID]))
 
-(defrecord Service [adapter translations api])
+(defrecord Service [handler translations api])
 
 (defn term
   [k]
@@ -19,13 +22,27 @@
   request)
 
 (defn- wrap [request] request)
-(defn- translate [request] request)
-(defn- build-op [request] request)
-(defn- execute-op [request] request)
+
+(defn- translate-request
+  [{{:keys [local->api]} :service
+    :keys [body]
+    :as request}]
+  (assoc request :body (if (and (map? body) local->api)
+                         (set/rename-keys body local->api)
+                         body)))
+
+(defn- build-op [{:keys [fn-def] :as request}]
+  (assoc request :op ((:op-fn fn-def) request)))
+
+(defn- handle-op [{{:keys [handler]} :service
+                   :keys [op]
+                   :as _request}]
+  (handler op))
+
 (defn- validate-response [request] request)
 
 (defn handle-request
-  [{:keys [service body fn-name] :as request}]
+  [{:keys [service fn-name] :as request}]
   (reduce (fn [x f]
             (let [response (f x)]
               (if (:cognitect.anomalies/category response)
@@ -34,47 +51,77 @@
           (assoc request :fn-def (get-in service [:api fn-name]))
           [validate-body
            wrap
-           translate
+           translate-request
            build-op
-           execute-op
+           handle-op
            validate-response]))
+
+(defn- op-template->fn-body
+  [op-template]
+  (walk/postwalk (fn [x]
+                   (cond
+                     (= :? x)
+                     'body
+
+                     (and (vector? x)
+                          (= ::term (first x)))
+                     (list 'api->local (second x) (second x))
+
+                     (and (vector? x)
+                          (= ::param (first x)))
+                     (list 'body (second x))
+
+                     :else
+                     x))
+                 op-template))
+
+(defn- op-form
+  [op-template]
+  (let [api->local-sym 'api->local
+        body-sym 'body]
+    `(fn [{{:keys [~api->local-sym]} :service
+           :keys [~body-sym]
+           :as ~(quote request)}]
+       ~(op-template->fn-body op-template))))
 
 (defn service-api
   [api]
   (reduce (fn [m [fn-name docstring-or-data data]]
-            (assoc m (keyword fn-name) (or data docstring-or-data)))
+            (let [data (or data docstring-or-data)
+                  data (assoc data :op-fn (op-form (:op-template data)))]
+              (assoc m (keyword fn-name) data)))
           {}
           api))
 
-(defn api-def
-  [service-name [fn-name docstring-or-data data]]
-  (let [data      (if data data)
+(defn- api-def-form
+  [[fn-name docstring-or-data data]]
+  (let [data      (if data data docstring-or-data)
         docstring (if data docstring-or-data "service op")
-        service   'service
-        body      'body
+        service-sym   'service
+        body-sym      'body
         fn-name-k (keyword fn-name)]
     `(defn ~fn-name
        ~docstring
-       [~service ~body]
-       (handle-request {:service ~service
-                        :body    ~body
+       [~service-sym ~body-sym]
+       (handle-request {:service ~service-sym
+                        :body    ~body-sym
                         :fn-name ~fn-name-k}))))
 
 (defn token-expired?
-  [x y] false)
+  [_ _] false)
 
 (defmacro defservice
   [service-name & api]
   `(do
      (def ~service-name (map->Service {:api ~(service-api api)}))
-     ~@(map #(api-def service-name %) api)))
+     ~@(map api-def-form api)))
 
 (defservice IdentityStore
   (user-by-email
    {:body-schema []
 
     :op-template
-    {:op    :get-one
+    {:op-type    :get-one
      :query {:select [:*]
              :from   [::term :user]
              :where  [:= [::term :user/email] :?]}}})
@@ -83,7 +130,7 @@
    {:body-schema []
 
     :op-template
-    {:op    :get-one
+    {:op-type    :get-one
      :query {:select [:*]
              :from   [::term :user]
              :where  [:= [::term :user/password_reset_token] :?]}}})
@@ -100,7 +147,7 @@
              (assoc :user/password_hash (str/upper-case password))))))
 
     :op-template
-    {:op        :insert
+    {:op-type        :insert
      :container [::term :user]
      :records   [:?]}})
 
@@ -113,11 +160,11 @@
       (fn [u]
         (handler
          (assoc u
-                :user/password_reset_token (java.util.UUID/randomUUID)
+                :user/password_reset_token (UUID/randomUUID)
                 :user/password_reset_token_created_at 0))))
 
     :op-template
-    {:op        :update
+    {:op-type        :update
      :container [::term :user]
      :where     {[::term :user/id] [::param :user/id]}
      :record    :?}})
@@ -139,22 +186,31 @@
               :user/id                              (:user/id user)})))))
 
     :op-template
-    {:op        :update
+    {:op-type        :update
      :container [::term :user]
      :where     {[::term :user/id] [::param :user/id]}
      :record    :?}}))
 
-#_
-(defn user-by-credentials
-  [store {:keys [:user/password] :as creds}]
-  (let [user (user-by-email db email)]
-    (and user
-         (not-empty password)
-         (:valid (buddy-hashers/verify password (:user/password_hash user)))
-         user)))
+(defmacro extend-service
+  [service-name {:keys [handler translation]}]
+  (let [extension {:handler handler
+                   :api->local translation
+                   :local->api (set/map-invert translation)}]
+    `(alter-var-root (var ~service-name) merge ~extension)))
 
-#_
-(extend-service
- IdentityStore
- {:translations []
-  :adapter {}})
+(extend-service IdentityStore
+  {:translation
+   {:user/id :my-user/id
+    :user/email :my-user/email
+    :user/password_hash :my-user/password_hash}
+   :handler identity})
+
+
+(comment
+  (defn user-by-credentials
+    [store {:keys [:user/password] :as creds}]
+    (let [user (user-by-email db email)]
+      (and user
+           (not-empty password)
+           (:valid (buddy-hashers/verify password (:user/password_hash user)))
+           user))))
