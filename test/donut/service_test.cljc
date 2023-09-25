@@ -29,14 +29,14 @@
                :from   [::term :user]
                :where  [:= [::term :user/password_reset_token] :?]}}})
 
-  (user-signup!
+  (create-user
    {:body-schema
     [:map
      [:user/email string?]
      [:user/password string?]]
 
     :transform-request
-    (fn user-signup!-transform-request [request]
+    (fn create-user-transform-request [request]
       (let [password (get-in request [:body :user/password])]
         (update request :body #(-> %
                                    (dissoc :user/password)
@@ -47,7 +47,7 @@
      :container [::term :user]
      :records   [:?]}})
 
-  (create-reset-password-token!
+  (create-reset-password-token
    {:body-schema     map?
     :response-schema map?
 
@@ -63,7 +63,7 @@
      :where     {[::term :user/id] [::param :user/id]}
      :record    :?}})
 
-  (consume-password-reset-token!
+  (consume-password-reset-token
    {:body-schema
     [:map
      [:new-password string?]
@@ -110,13 +110,15 @@
   (swap! data-store merge record))
 
 (service/implement-service IdentityStore
-  {:translation
+  {:substitutions
    {:user/id :my-user/id
     :user/email :my-user/email
     :user/password_hash :my-user/password_hash
     :user/password_reset_token :my-user/password_reset_token
     :user/password_reset_token_created_at :my-user/password_reset_token_created_at}
-   :handler identity-store-handler})
+
+   :handler
+   identity-store-handler})
 
 (deftest test-user-by-email
   (reset! data-store {:my-user/id 1 :my-user/email "test@test.com"})
@@ -125,9 +127,18 @@
          (user-by-email IdentityStore "test@test.com"))))
 
 (deftest test-translates-body
-  (user-signup! IdentityStore {:user/id 1
-                               :user/email "test@test.com"
-                               :user/password "password"})
+  (create-user IdentityStore {:user/id 1
+                              :user/email "test@test.com"
+                              :user/password "password"})
+  (is (= {:my-user/id 1
+          :my-user/email "test@test.com"
+          :my-user/password_hash "PASSWORD"}
+         @data-store)))
+
+(deftest test-translates-body-client->service
+  (create-user IdentityStore {:my-user/id 1
+                              :my-user/email "test@test.com"
+                              :my-user/password "password"})
   (is (= {:my-user/id 1
           :my-user/email "test@test.com"
           :my-user/password_hash "PASSWORD"}

@@ -5,7 +5,7 @@
    [malli.core :as m]
    [malli.error :as me]))
 
-(defrecord Service [handler translations api])
+(defrecord Service [handler substitutionss api])
 
 (defn- validate-body
   [{{:keys [body-schema]} :fn-def
@@ -24,19 +24,19 @@
     request))
 
 (defn- translate-request
-  [{{:keys [api->local]} :service
+  [{{:keys [service->client]} :service
     :keys [body]
     :as request}]
-  (assoc request :body (if (and (map? body) api->local)
-                         (set/rename-keys body api->local)
+  (assoc request :body (if (and (map? body) service->client)
+                         (set/rename-keys body service->client)
                          body)))
 
 (defn- translate-response
-  [{{:keys [local->api]} :service
+  [{{:keys [client->service]} :service
     :keys [response]
     :as request}]
-  (assoc request :response (if (and (map? response) local->api)
-                             (set/rename-keys response local->api)
+  (assoc request :response (if (and (map? response) client->service)
+                             (set/rename-keys response client->service)
                              response)))
 
 (defn- build-op [{:keys [fn-def] :as request}]
@@ -75,7 +75,7 @@
 
                      (and (vector? x)
                           (= ::term (first x)))
-                     (list 'api->local (second x) (second x))
+                     (list 'service->client (second x) (second x))
 
                      (and (vector? x)
                           (= ::param (first x)))
@@ -87,9 +87,9 @@
 
 (defn- op-form
   [op-template]
-  (let [api->local-sym 'api->local
+  (let [service->client-sym 'service->client
         body-sym 'body]
-    `(fn [{{:keys [~api->local-sym]} :service
+    `(fn [{{:keys [~service->client-sym]} :service
            :keys [~body-sym]
            :as ~(quote request)}]
        ~(op-template->fn-body op-template))))
@@ -125,10 +125,10 @@
      (def ~service-name (map->Service {:api ~(service-api api)}))))
 
 (defmacro implement-service
-  [service-name {:keys [handler translation]}]
+  [service-name {:keys [handler substitutions]}]
   (let [implementation {:handler handler
-                        :api->local translation
-                        :local->api (set/map-invert translation)}]
+                        :service->client substitutions
+                        :client->service (set/map-invert substitutions)}]
     `(alter-var-root (var ~service-name) merge ~implementation)))
 
 (comment
