@@ -264,3 +264,14 @@ majority of use cases.
 
 ## Why not use protocols?
 
+TODO
+
+## Experimental
+
+This library is an experiment. It will probably change and may get abandoned.
+I'm putting it out to collaborate with folks on it, to see if it's a worthwhile
+idea.
+
+PRs and issues welcome! Also check out the [#donut channel in Clojurians
+Slack](https://clojurians.slack.com/archives/C030C4Z2W0Y) if you wanna chat or
+if you have questions.
