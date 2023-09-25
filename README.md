@@ -37,7 +37,7 @@ application can implement a handler for `IdentityStore` that takes data like
 
 ## Example
 
-To use the donut.service, you:
+To use donut.service, you:
 
 1. Define a service in your library using the `defservice` macro.
 2. Define service functions within the body of `defservice`

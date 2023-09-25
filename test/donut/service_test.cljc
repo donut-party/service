@@ -113,6 +113,7 @@
   {:substitutions
    {:user/id :my-user/id
     :user/email :my-user/email
+    :user/password :my-user/password
     :user/password_hash :my-user/password_hash
     :user/password_reset_token :my-user/password_reset_token
     :user/password_reset_token_created_at :my-user/password_reset_token_created_at}

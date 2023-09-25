@@ -23,7 +23,15 @@
     (transform request)
     request))
 
-(defn- translate-request
+(defn body-client->service
+  [{{:keys [client->service]} :service
+    :keys [body]
+    :as request}]
+  (assoc request :body (if (and (map? body) client->service)
+                         (set/rename-keys body client->service)
+                         body)))
+
+(defn- body-service->client
   [{{:keys [service->client]} :service
     :keys [body]
     :as request}]
@@ -31,7 +39,7 @@
                          (set/rename-keys body service->client)
                          body)))
 
-(defn- translate-response
+(defn- response-client->service
   [{{:keys [client->service]} :service
     :keys [response]
     :as request}]
@@ -57,12 +65,13 @@
                 (reduced response)
                 response)))
           (assoc request :fn-def (get-in service [:api fn-name]))
-          [validate-body
+          [body-client->service
+           validate-body
            transform-request
-           translate-request
+           body-service->client
            build-op
            handle-op
-           translate-response
+           response-client->service
            validate-response
            :response]))
 
