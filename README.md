@@ -105,7 +105,7 @@ application can implement a _handler_ for `IdentityStore` that takes data like
 
 Let's walk through this.
 
-### Library: define a service
+### define a service in your library
 
 You use the `defservice` macro to define your service. A service is comprised of:
 
@@ -132,7 +132,7 @@ using `defn`. Service functions take two arguments: a service, and a body. They
 perform a series of transformations to create an `op` map, and then pass that as
 an argument to the _handler_ provided by the client application.
 
-### Client: implement service
+### client implements the service
 
 `implement-service` updates a service with `:substitutions` and a `:handler`.
 
