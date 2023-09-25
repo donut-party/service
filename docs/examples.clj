@@ -6,6 +6,65 @@
    [java.util UUID]))
 
 ;;---
+;; library portion - you would define your service in the library you're writing
+;;---
+(service/defservice IdentityStore
+  ;; this defines a service function named create-user. service functions always
+  ;; take two arguments, a service and a body
+  (create-user
+   {;; validate input
+    :body-schema
+    [:map
+     [:user/email string?]
+     [:user/password string?]]
+
+    ;; described below
+    :transform-request
+    (fn [request]
+      (let [password-hash (-> request
+                              (get-in [:body :user/password])
+                              str/upper-case)]
+        (update request :body #(-> %
+                                   (dissoc :user/password)
+                                   (assoc :user/password_hash password-hash)))))
+
+    ;; this is used to construct the argument that's sent to a service handler
+    :op-template
+    {:op-type   :insert
+     :container [::service/term :user]
+     :records   [::service/body]}}))
+
+;;---
+;; client portion - people using your lib would have code like this in their app
+;;---
+
+;; using an atom for the purpose of this example so we can inspect it
+(def data-store (atom nil))
+
+(defmulti identity-store-handler (fn [{:keys [op-type]}] op-type))
+(defmethod identity-store-handler
+  :insert
+  [{:keys [records]}]
+  (reset! data-store (first records)))
+
+(service/implement-service IdentityStore
+  {:substitutions
+   {:user/email :my-user/email
+    :user/password_hash :my-user/password_hash}
+
+   :handler
+   identity-store-handler})
+
+;; now let's actually call the create-user function. It should update the
+;; @data-store atom, and it should return a map
+(create-user IdentityStore {:user/email "test@test.com" :user/password "test"})
+;; =>
+#:user{:email "test@test.com", :password_hash "TEST"}
+
+@data-store ;; =>
+#:my-user{:email "test@test.com", :password_hash "TEST"}
+
+;;---
 ;; library portion
 ;;---
 ;;
@@ -44,8 +103,8 @@
 
     :op-template
     {:op-type   :insert
-     :container [::term :user]
-     :records   [:?]}})
+     :container [::service/term :user]
+     :records   [::service/body]}})
 
   (create-reset-password-token
    {:body-schema     map?
@@ -59,9 +118,9 @@
 
     :op-template
     {:op-type   :update
-     :container [::term :user]
-     :where     {[::term :user/id] [::param :user/id]}
-     :record    :?}}))
+     :container [::service/term :user]
+     :where     {[::service/term :user/id] [::param :user/id]}
+     :record    ::service/body}}))
 
 (def data-store (atom nil))
 (defn reset-data-store [f] (reset! data-store nil) (f))

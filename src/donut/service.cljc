@@ -79,7 +79,7 @@
   [op-template]
   (walk/postwalk (fn [x]
                    (cond
-                     (= :? x)
+                     (= ::body x)
                      'body
 
                      (and (vector? x)

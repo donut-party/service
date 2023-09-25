@@ -17,8 +17,8 @@
     :op-template
     {:op-type :get-one
      :query   {:select [:*]
-               :from   [::term :user]
-               :where  [:= [::term :user/email] :?]}}})
+               :from   [::service/term :user]
+               :where  [:= [::service/term :user/email] ::service/body]}}})
 
   (user-by-password-reset-token
    {:body-schema map?
@@ -26,8 +26,8 @@
     :op-template
     {:op-type :get-one
      :query   {:select [:*]
-               :from   [::term :user]
-               :where  [:= [::term :user/password_reset_token] :?]}}})
+               :from   [::service/term :user]
+               :where  [:= [::service/term :user/password_reset_token] ::service/body]}}})
 
   (create-user
    {:body-schema
@@ -44,8 +44,8 @@
 
     :op-template
     {:op-type   :insert
-     :container [::term :user]
-     :records   [:?]}})
+     :container [::service/term :user]
+     :records   [::service/body]}})
 
   (create-reset-password-token
    {:body-schema     map?
@@ -59,9 +59,9 @@
 
     :op-template
     {:op-type   :update
-     :container [::term :user]
-     :where     {[::term :user/id] [::param :user/id]}
-     :record    :?}})
+     :container [::service/term :user]
+     :where     {[::service/term :user/id] [::service/param :user/id]}
+     :record    ::service/body}})
 
   (consume-password-reset-token
    {:body-schema
@@ -82,9 +82,9 @@
 
     :op-template
     {:op-type   :update
-     :container [::term :user]
-     :where     {[::term :user/id] [::param :user/id]}
-     :record    :?}}))
+     :container [::service/term :user]
+     :where     {[::service/term :user/id] [::service/param :user/id]}
+     :record    ::service/body}}))
 
 
 (def data-store (atom nil))
